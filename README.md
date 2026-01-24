@@ -18,13 +18,14 @@ Recreate the UI and simple logic from the Figma design. The app consists of two 
   - **Current days streak** - flame icon, streak count, and "X days overall" pill
   - **Focus time today** - time icon, focus time, and "Xd Xh Xm overall" pill
 - Weekly stats section:
-  - "Average focus time" with period selector
+  - Focus time/average focus time with period selector
   - Bar chart showing daily focus time (Mon-Sun)
   - Average line indicator
 
 ### Time Logic
 - Time is counted based on the device's system clock
 - "Focus time today" resets to zero every day at midnight
+- Statistics must be persisted to local storage and restored after app restart (e.g., using [`shared_preferences`](https://pub.dev/packages/shared_preferences/install) package)
 
 ## Figma
 
