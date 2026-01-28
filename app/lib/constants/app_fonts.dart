@@ -30,9 +30,6 @@ class AppFonts {
     color: AppColor.primary,
   );
 
-  // Body Text (Mixed Defaults based on usage frequency)
-
-  /// Primary 19px w500 (Previously 'extraMedium')
   static final bodyLarge = _baseFamily(
     fontSize: 19,
     fontWeight: FontWeight.w500,

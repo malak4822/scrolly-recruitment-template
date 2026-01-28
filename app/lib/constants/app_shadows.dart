@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 class AppShadows {
   static const defaultShadow = [
     BoxShadow(
-      color: Color(0x4D000000), // 30% opacity #000000 (approx from image)
+      color: Color(0x4D000000),
       offset: Offset(0, 1),
       blurRadius: 3,
       spreadRadius: 0,
     ),
     BoxShadow(
-      color: Color(0x26000000), // 15% opacity #000000 (approx from image)
+      color: Color(0x26000000),
       offset: Offset(0, 4),
       blurRadius: 8,
       spreadRadius: 3,

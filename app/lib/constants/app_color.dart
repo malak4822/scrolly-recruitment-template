@@ -9,5 +9,5 @@ class AppColor {
 
   static const Color secondary = Color(0XFFBFAC85);
   static const Color card = Color(0XFFF4DCAD);
-  static const Color darkenCard = Color(0XFFD1B888);
+  static const Color darkCard = Color(0XFFD1B888);
 }
