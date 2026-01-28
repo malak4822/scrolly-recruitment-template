@@ -24,7 +24,7 @@ class ChartBar extends StatelessWidget {
           width: 33.w,
           height: height,
           decoration: BoxDecoration(
-            color: isHighlighted ? AppColor.chart : AppColor.darkenCard,
+            color: isHighlighted ? AppColor.chart : AppColor.darkCard,
             borderRadius: BorderRadius.circular(8.r),
           ),
         ),

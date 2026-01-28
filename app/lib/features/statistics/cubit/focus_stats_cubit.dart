@@ -1,17 +1,15 @@
 import 'dart:async';
 import 'package:app/features/statistics/data/repositories/statistics_repository.dart';
-import 'package:flutter/foundation.dart';
+import 'package:app/features/statistics/services/focus_session_service.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:intl/intl.dart';
 import 'focus_stats_state.dart';
 
 class FocusStatsCubit extends Cubit<FocusStatsState> {
   final StatisticsRepository _repository;
   Timer? _timer;
 
-  // Fake data toggle
-  FocusStatsCubit({StatisticsRepository? repository})
-    : _repository = repository ?? StatisticsRepository(useFakeData: kDebugMode),
+  FocusStatsCubit()
+    : _repository = StatisticsRepository(),
       super(const FocusStatsState()) {
     _loadInitialData();
   }
@@ -19,9 +17,8 @@ class FocusStatsCubit extends Cubit<FocusStatsState> {
   Future<void> _loadInitialData() async {
     final history = await _repository.loadData();
     emit(state.copyWith(isLoading: false, focusHistory: history));
+    await _recoverSession();
   }
-
-  // --- Core Focus Logic ---
 
   void toggleFocus() {
     if (state.isFocusing) {
@@ -31,77 +28,134 @@ class FocusStatsCubit extends Cubit<FocusStatsState> {
     }
   }
 
-  void _startFocusSession() {
-    emit(state.copyWith(isFocusing: true, currentSessionSeconds: 0));
+  void _startFocusSession({bool isRecovery = false}) {
+    if (!isRecovery) {
+      final now = DateTime.now();
+      emit(state.copyWith(
+        isFocusing: true,
+        currentSessionSeconds: 0,
+        sessionStartTime: now,
+      ));
+      _repository.saveFocusState(isFocusing: true, startTime: now);
+    } else {
+      emit(state.copyWith(isFocusing: true));
+    }
+
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      emit(
-        state.copyWith(currentSessionSeconds: state.currentSessionSeconds + 1),
-      );
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) async {
+      final startTime = state.sessionStartTime;
+      if (startTime == null) return;
+
+      final now = DateTime.now();
+      final todayKey = FocusSessionService.getTodayKey();
+      final sessionStartKey = FocusSessionService.splitSessionByDays(startTime, startTime.add(const Duration(seconds: 1))).keys.first;
+      
+      if (todayKey != sessionStartKey) {
+        await _saveCurrentFocus();
+        return; 
+      }
+
+      final diff = now.difference(startTime).inSeconds;
+      emit(state.copyWith(currentSessionSeconds: diff));
     });
   }
 
   Future<void> _stopFocusSession() async {
     _timer?.cancel();
 
-    final sessionSeconds = state.currentSessionSeconds;
-    final Map<String, int> newHistory = Map<String, int>.from(
-      state.focusHistory,
+    final now = DateTime.now();
+    final effectiveStartTime = state.sessionStartTime ?? now.subtract(Duration(seconds: state.currentSessionSeconds));
+    
+    final distribution = FocusSessionService.splitSessionByDays(effectiveStartTime, now);
+    final newHistory = FocusSessionService.addMultipleSessionsToHistory(
+      currentHistory: state.focusHistory,
+      sessions: distribution,
     );
-    final String todayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-    final currentTotal = newHistory[todayKey] ?? 0;
-    newHistory[todayKey] = currentTotal + sessionSeconds;
-
-    // Optimistic update
     emit(
       state.copyWith(
         isFocusing: false,
         currentSessionSeconds: 0,
+        sessionStartTime: null,
         focusHistory: newHistory,
       ),
     );
 
-    // Persist
+    await _repository.saveFocusState(isFocusing: false);
     await _repository.saveData(newHistory);
   }
 
-  // --- Public API for UI ---
+  Future<void> _saveCurrentFocus() async {
+    if (!state.isFocusing) return;
 
-  // Get formatted daily stats for a specific date
-  int getStatsForDate(DateTime date) {
-    final key = DateFormat('yyyy-MM-dd').format(date);
-    return state.focusHistory[key] ?? 0;
-  }
+    final startTime = state.sessionStartTime;
+    if (startTime == null) return;
 
-  /// Returns the earliest date present in the history, or null if empty.
-  DateTime? get earliestDate {
-    if (state.focusHistory.isEmpty) return null;
-
-    DateTime? min;
-    for (final key in state.focusHistory.keys) {
-      try {
-        final date = DateFormat('yyyy-MM-dd').parse(key);
-        if (min == null || date.isBefore(min)) {
-          min = date;
-        }
-      } catch (_) {
-        // Ignore parse errors
-      }
+    final now = DateTime.now();
+    final distribution = FocusSessionService.splitSessionByDays(startTime, now);
+    final todayKey = FocusSessionService.getTodayKey();
+    
+    final pastSessions = Map<String, int>.from(distribution)..remove(todayKey);
+    
+    if (pastSessions.isNotEmpty) {
+      final newHistory = FocusSessionService.addMultipleSessionsToHistory(
+        currentHistory: state.focusHistory,
+        sessions: pastSessions,
+      );
+      
+      final todayStart = DateTime(now.year, now.month, now.day);
+      emit(state.copyWith(
+        focusHistory: newHistory,
+        sessionStartTime: todayStart,
+      ));
+      
+      await _repository.saveData(newHistory);
+      await _repository.saveFocusState(isFocusing: true, startTime: todayStart);
     }
-    return min;
   }
 
-  // Helper for "Today" including current session
-  int get todayTotalSeconds {
-    final key = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final historySeconds = state.focusHistory[key] ?? 0;
-    return historySeconds + state.currentSessionSeconds;
+  Future<void> _recoverSession() async {
+    final (isFocusingStored, startTime) = await _repository.getFocusState();
+    if (!isFocusingStored || startTime == null) return;
+
+    final now = DateTime.now();
+    if (now.isBefore(startTime)) return;
+
+    final distribution = FocusSessionService.splitSessionByDays(startTime, now);
+    final todayKey = FocusSessionService.getTodayKey();
+    
+    final pastSessions = Map<String, int>.from(distribution)..remove(todayKey);
+    Map<String, int> currentHistory = state.focusHistory;
+
+    DateTime effectiveStartTime = startTime;
+    if (pastSessions.isNotEmpty) {
+      currentHistory = FocusSessionService.addMultipleSessionsToHistory(
+        currentHistory: state.focusHistory,
+        sessions: pastSessions,
+      );
+      await _repository.saveData(currentHistory);
+      
+      effectiveStartTime = DateTime(now.year, now.month, now.day);
+      await _repository.saveFocusState(isFocusing: true, startTime: effectiveStartTime);
+    }
+
+    final todaySeconds = distribution[todayKey] ?? 0;
+    emit(state.copyWith(
+      focusHistory: currentHistory,
+      isFocusing: true,
+      currentSessionSeconds: todaySeconds,
+      sessionStartTime: effectiveStartTime,
+    ));
+
+    _startFocusSession(isRecovery: true);
   }
+
+  void saveOnAppPause() => _saveCurrentFocus();
 
   @override
-  Future<void> close() {
+  Future<void> close() async {
     _timer?.cancel();
+    await _saveCurrentFocus();
     return super.close();
   }
 }

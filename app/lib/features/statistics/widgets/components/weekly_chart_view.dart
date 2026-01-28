@@ -1,30 +1,26 @@
 import 'package:app/constants/app_color.dart';
 import 'package:app/constants/app_fonts.dart';
-import 'package:app/features/statistics/widgets/weekly_chart/components/chart_bar.dart';
-import 'package:app/features/statistics/widgets/weekly_chart/components/dashed_line_painter.dart';
+import 'package:app/features/statistics/utils/time_utils.dart';
+import 'package:app/features/statistics/widgets/components/chart_bar.dart';
+import 'package:app/features/statistics/data/models/weekly_chart_view_model.dart';
+import 'package:app/features/statistics/widgets/components/dashed_line_painter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 class WeeklyChartView extends StatelessWidget {
-  final List<Map<String, dynamic>> weekData;
-  final DateTime? selectedDate;
-  final double avgMinutes;
-  final double safeMax;
+  final WeeklyChartViewModel viewModel;
   final ValueChanged<DateTime> onDateSelect;
 
   const WeeklyChartView({
     super.key,
-    required this.weekData,
-    required this.selectedDate,
-    required this.avgMinutes,
-    required this.safeMax,
+    required this.viewModel,
     required this.onDateSelect,
   });
 
   @override
   Widget build(BuildContext context) {
     final double chartHeight = 145.h;
-    final double avgLineBottom = (avgMinutes / safeMax) * chartHeight;
+    final double avgLineBottom = (viewModel.avgMinutes / viewModel.safeMax) * chartHeight;
 
     return Stack(
       clipBehavior: Clip.none,
@@ -40,20 +36,20 @@ class WeeklyChartView extends StatelessWidget {
               crossAxisAlignment: .end,
               mainAxisAlignment: .start,
               children: [
-                for (int i = 0; i < weekData.length; i++) ...[
+                for (int i = 0; i < viewModel.weekData.length; i++) ...[
                   if (i > 0) SizedBox(width: 12.w),
                   GestureDetector(
-                    onTap: () => onDateSelect(weekData[i]['date'] as DateTime),
+                    onTap: () => onDateSelect(viewModel.weekData[i].date),
                     child: ChartBar(
                       height:
-                          ((weekData[i]['minutes'] as double) /
-                          safeMax *
+                          (viewModel.weekData[i].minutes /
+                          viewModel.safeMax *
                           chartHeight),
-                      dayLabel: weekData[i]['dayLabel'] as String,
-                      isHighlighted: selectedDate != null
-                          ? _isSameDay(
-                              weekData[i]['date'] as DateTime,
-                              selectedDate!,
+                      dayLabel: viewModel.weekData[i].dayLabel,
+                      isHighlighted: viewModel.selectedDate != null
+                          ? TimeUtils.isSameDay(
+                              viewModel.weekData[i].date,
+                              viewModel.selectedDate!,
                             )
                           : false,
                     ),
@@ -64,7 +60,7 @@ class WeeklyChartView extends StatelessWidget {
           ),
         ),
 
-        if (avgMinutes > 0)
+        if (viewModel.avgMinutes > 0)
           Positioned(
             bottom: avgLineBottom,
             left: 0,
@@ -86,9 +82,5 @@ class WeeklyChartView extends StatelessWidget {
           ),
       ],
     );
-  }
-
-  bool _isSameDay(DateTime a, DateTime b) {
-    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 }
